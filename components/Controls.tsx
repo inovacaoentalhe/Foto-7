@@ -1,12 +1,11 @@
-
 import React, { useState, useMemo } from 'react';
 import { AppMode, ArtStyle, CameraAngle, FormData, MarketingTone, ShadowType, TextPresence, Ambience, BackgroundType, CatalogBackgroundType } from '../types';
-import { generateStructuredBrief } from '../services/geminiService';
+import { generateStructuredBrief, assembleFinalPrompt, getMaterialDescriptors } from '../services/geminiService';
 import { saveStoredAmbience, deleteStoredAmbience } from '../services/persistenceService';
 import { 
   Sparkles, Layers, Megaphone, BookOpen, RefreshCw, 
   Layout, Palette, ChevronDown, Plus, Trash2, Settings2,
-  Lock, X, Loader2, MagicWand
+  Lock, X, Loader2, Info, ChevronRight, ChevronLeft, Eye, EyeOff, FileText, Search
 } from 'lucide-react';
 import { ReferenceUpload } from './ReferenceUpload';
 import { PresetsModule } from './PresetsModule';
@@ -16,8 +15,12 @@ interface ControlsProps {
   setFormData: React.Dispatch<React.SetStateAction<FormData>>;
   onGenerate: () => void;
   onAutoComplete: () => void;
+  onAnalyzeProduct: () => void;
+  onPreview: (pt: string, en: string) => void;
   isGenerating: boolean;
   isApplyingSuggestions: boolean;
+  isAnalyzingProduct?: boolean;
+  productAnalysis?: string | null;
 }
 
 export const Controls: React.FC<ControlsProps> = ({ 
@@ -25,20 +28,26 @@ export const Controls: React.FC<ControlsProps> = ({
   setFormData, 
   onGenerate, 
   onAutoComplete,
+  onAnalyzeProduct,
+  onPreview,
   isGenerating, 
-  isApplyingSuggestions 
+  isApplyingSuggestions,
+  isAnalyzingProduct,
+  productAnalysis
 }) => {
-  const [isGeneratingBriefing, setIsGeneratingBriefing] = useState(false);
-  const [newAmbTitle, setNewAmbTitle] = useState('');
-  const [newAmbDesc, setNewAmbDesc] = useState('');
+  // Added missing state to fix the "Cannot find name 'showAllAmbiences'" error.
   const [showAllAmbiences, setShowAllAmbiences] = useState(false);
+  const [isGeneratingBriefing, setIsGeneratingBriefing] = useState(false);
   const [newPropInput, setNewPropInput] = useState('');
+
+  const isAdvanced = formData.uiMode === 'advanced';
+  const step = formData.wizardStep;
 
   const isSocial = formData.objective === AppMode.SOCIAL;
   const isCatalog = formData.objective === AppMode.CATALOG;
-  const isPlaceholderMode = formData.marketingDirection === 'Espaço reservado';
 
-  const canGenerate = formData.productName.trim().length > 0;
+  const canAdvanceStep1 = formData.productName.trim().length > 0;
+  const canGenerate = canAdvanceStep1;
 
   const handleChange = (field: keyof FormData, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -47,7 +56,6 @@ export const Controls: React.FC<ControlsProps> = ({
   const handleModeChange = (mode: AppMode) => {
       let newAspectRatio = formData.defaultAspectRatio;
       let newMarketingDirection = formData.marketingDirection;
-
       if (mode === AppMode.CATALOG) {
           newAspectRatio = '1:1';
           newMarketingDirection = 'Espaço reservado';
@@ -55,7 +63,6 @@ export const Controls: React.FC<ControlsProps> = ({
       if (mode === AppMode.SOCIAL) {
           newAspectRatio = '3:4';
       }
-
       setFormData(prev => ({
           ...prev,
           objective: mode,
@@ -63,6 +70,9 @@ export const Controls: React.FC<ControlsProps> = ({
           marketingDirection: newMarketingDirection
       }));
   };
+
+  const nextStep = () => handleChange('wizardStep', Math.min(step + 1, 3));
+  const prevStep = () => handleChange('wizardStep', Math.max(step - 1, 1));
 
   const addProp = () => {
     if (newPropInput.trim()) {
@@ -72,7 +82,7 @@ export const Controls: React.FC<ControlsProps> = ({
   };
 
   const removeProp = (prop: string) => {
-    setFormData(prev => ({ ...prev, props: prev.props.filter(p => p !== prop) }));
+    setFormData(prev => ({ ...prev, props: prev.props.filter(propToRemove => propToRemove !== prop) }));
   };
 
   const handleGenerateBrief = async () => {
@@ -96,289 +106,257 @@ export const Controls: React.FC<ControlsProps> = ({
     }
   };
 
-  const handleAddCustomAmbience = () => {
-    if (!newAmbTitle || !newAmbDesc) return;
-    const newAmb: Ambience = {
-      id: crypto.randomUUID(),
-      title: newAmbTitle,
-      description: newAmbDesc,
-      isCustom: true,
-      useCount: 0
-    };
-    setFormData(prev => ({
-      ...prev,
-      customAmbiences: [...prev.customAmbiences, newAmb],
-      selectedAmbienceId: newAmb.id
-    }));
-    saveStoredAmbience(newAmb);
-    setNewAmbTitle('');
-    setNewAmbDesc('');
-  };
+  const handleLocalPreview = () => {
+    // Monta um assunto base em PT para o preview
+    const subjectPt = `PRODUTO: ${formData.productName}. DETECÇÃO: ${productAnalysis || 'Não analisado'}. MATERIAL: ${formData.material}. CENÁRIO: ${formData.userBrief || formData.finalBriefPt || 'Estúdio Profissional'}.`;
+    const materialDesc = getMaterialDescriptors(formData.material, formData.productName);
+    
+    const promptEnPreview = assembleFinalPrompt(subjectPt, materialDesc, formData);
+    const promptPtPreview = assembleFinalPrompt(subjectPt, materialDesc, formData);
 
-  const removeCustomAmbience = (id: string) => {
-    setFormData(prev => ({
-      ...prev,
-      customAmbiences: prev.customAmbiences.filter(a => a.id !== id),
-      selectedAmbienceId: prev.selectedAmbienceId === id ? undefined : prev.selectedAmbienceId
-    }));
-    deleteStoredAmbience(id);
+    onPreview(promptPtPreview, promptEnPreview);
   };
 
   const allAmbiences = useMemo(() => {
     return [...formData.suggestedAmbiences, ...formData.customAmbiences];
   }, [formData.suggestedAmbiences, formData.customAmbiences]);
 
-  const topAmbiences = useMemo(() => {
-    return allAmbiences.slice(0, 5);
-  }, [allAmbiences]);
+  const topAmbiences = useMemo(() => allAmbiences.slice(0, 5), [allAmbiences]);
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl animate-fade-in overflow-hidden max-h-[175vh] flex flex-col">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl animate-fade-in flex flex-col h-full overflow-hidden">
+      {/* Header com Toggle Simple/Advanced */}
+      <div className="p-4 border-b border-zinc-800 bg-zinc-900/50 flex justify-between items-center">
+        <h2 className="text-sm font-bold text-white flex items-center gap-2">
+           <Settings2 className="w-4 h-4 text-[#FCB82E]" /> Estúdio
+        </h2>
+        <div className="flex bg-zinc-950 p-1 rounded-lg border border-zinc-800">
+            <button 
+                onClick={() => handleChange('uiMode', 'simple')}
+                className={`px-3 py-1 text-[10px] font-black uppercase rounded-md transition-all ${formData.uiMode === 'simple' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}
+            >
+                Simples
+            </button>
+            <button 
+                onClick={() => handleChange('uiMode', 'advanced')}
+                className={`px-3 py-1 text-[10px] font-black uppercase rounded-md transition-all ${formData.uiMode === 'advanced' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}
+            >
+                Avançado
+            </button>
+        </div>
+      </div>
+
       <PresetsModule formData={formData} setFormData={setFormData} />
 
-      <div className="p-6 space-y-8 overflow-y-auto custom-scrollbar flex-1">
-          <div className="border-b border-zinc-800 pb-4 flex justify-between items-center">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <Layers className="w-5 h-5 text-[#FCB82E]" /> Objetivo
-              </h2>
-              <div className="flex bg-zinc-950 p-1 rounded-lg border border-zinc-800">
-                  {Object.values(AppMode).map(mode => (
-                      <button key={mode} onClick={() => handleModeChange(mode)} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${formData.objective === mode ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}>
-                          {mode}
-                      </button>
-                  ))}
-              </div>
-          </div>
-
-          <ReferenceUpload formData={formData} setFormData={setFormData} />
-
-          <div className="space-y-4 pt-4 border-t border-zinc-800">
-            <h3 className="text-sm font-semibold text-zinc-300 flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-blue-400" /> Briefing do Produto
-            </h3>
-            <div className="grid grid-cols-2 gap-2">
-                <div className="relative">
-                    <input 
-                        type="text" 
-                        value={formData.productName} 
-                        onChange={e => handleChange('productName', e.target.value)} 
-                        placeholder="Produto" 
-                        className={`bg-zinc-950 border rounded px-3 py-1.5 text-xs text-white outline-none focus:border-blue-500 w-full ${formData.productName.trim().length === 0 ? 'border-red-900' : 'border-zinc-800'}`} 
-                    />
-                     {formData.productName.trim().length === 0 && (
-                        <span className="absolute right-3 top-2 text-[8px] text-red-500 font-bold">OBRIGATÓRIO</span>
-                    )}
-                </div>
-                <input type="text" value={formData.material} onChange={e => handleChange('material', e.target.value)} placeholder="Material" className="bg-zinc-950 border border-zinc-800 rounded px-3 py-1.5 text-xs text-white outline-none focus:border-blue-500" />
+      {/* Indicador de Progresso (Wizard) */}
+      <div className="px-6 py-4 flex items-center justify-between border-b border-zinc-800">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="flex items-center">
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${step === i ? 'bg-amber-500 text-black' : step > i ? 'bg-emerald-500 text-white' : 'bg-zinc-800 text-zinc-500'}`}>
+              {i}
             </div>
-
-            <textarea value={formData.userBrief} onChange={(e) => handleChange('userBrief', e.target.value)} placeholder="Ex: Clima rústico, luz lateral, para redes sociais..." className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-xs text-white h-20 outline-none resize-none focus:border-blue-500" />
-
-            <div className="grid grid-cols-1 gap-2">
-              <button onClick={handleGenerateBrief} disabled={!formData.productName || isGeneratingBriefing} className="w-full bg-zinc-800 hover:bg-zinc-700 text-[10px] font-black uppercase text-zinc-300 py-3 rounded-lg flex items-center justify-center gap-2 border border-zinc-700 transition-all">
-                {isGeneratingBriefing ? <Loader2 className="animate-spin w-3 h-3" /> : <Sparkles className="w-3 h-3 text-[#FCB82E]" />} Gerar Briefing (Fast AI)
-              </button>
-              
-              <button 
-                onClick={onAutoComplete} 
-                disabled={isApplyingSuggestions || (!formData.finalBriefPt && !formData.userBrief)}
-                className="w-full bg-amber-900/10 hover:bg-amber-900/20 text-[10px] font-black uppercase text-amber-500 py-3 rounded-lg flex items-center justify-center gap-2 border border-amber-900/30 transition-all"
-              >
-                {isApplyingSuggestions ? <Loader2 className="animate-spin w-3 h-3" /> : <Sparkles className="w-3 h-3" />} Auto-completar do Briefing
-              </button>
-            </div>
-
-            {formData.finalBriefPt && (
-                <div className="p-2 bg-zinc-950 rounded border border-zinc-800">
-                    <label className="text-[9px] font-bold text-emerald-500 uppercase flex items-center gap-1"><Lock className="w-2 h-2" /> Briefing Consolidado</label>
-                    <textarea value={formData.finalBriefPt} onChange={(e) => handleChange('finalBriefPt', e.target.value)} className="w-full bg-transparent border-0 text-[11px] text-zinc-300 h-20 outline-none resize-none" />
-                </div>
-            )}
+            {i < 3 && <div className={`w-8 h-0.5 mx-2 ${step > i ? 'bg-emerald-500' : 'bg-zinc-800'}`} />}
           </div>
+        ))}
+        <span className="text-[10px] font-bold text-zinc-500 uppercase ml-auto">
+          {step === 1 ? 'Produto' : step === 2 ? 'Imagens' : 'Estilo'}
+        </span>
+      </div>
 
-          <div className="space-y-6 pt-4 border-t border-zinc-800 animate-slide-up">
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
+        {step === 1 && (
+          <div className="space-y-6 animate-slide-in">
+             <div className="space-y-4">
+               <h3 className="text-sm font-semibold text-zinc-300 flex items-center gap-2">
+                   <BookOpen className="w-4 h-4 text-blue-400" /> Detalhes do Produto
+               </h3>
+               <div className="space-y-3">
+                   <div className="relative">
+                       <label className="text-[9px] font-bold text-zinc-500 uppercase mb-1 block">Nome do Produto</label>
+                       <input 
+                           type="text" 
+                           value={formData.productName} 
+                           onChange={e => handleChange('productName', e.target.value)} 
+                           placeholder="Ex: Tábua de Churrasco Premium" 
+                           className={`bg-zinc-950 border rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-blue-500 w-full ${formData.productName.trim().length === 0 ? 'border-red-900/50' : 'border-zinc-800'}`} 
+                       />
+                   </div>
+                   {isAdvanced && (
+                     <div>
+                       <label className="text-[9px] font-bold text-zinc-500 uppercase mb-1 block">Material</label>
+                       <input type="text" value={formData.material} onChange={e => handleChange('material', e.target.value)} placeholder="Ex: Madeira Teca, Aço Inox" className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-blue-500 w-full" />
+                     </div>
+                   )}
+               </div>
+
+               <div className="space-y-1">
+                 <label className="text-[9px] font-bold text-zinc-500 uppercase flex items-center gap-1">Objetivo de Uso <Info className="w-2.5 h-2.5" title="Define o contexto visual e formato padrão." /></label>
+                 <div className="grid grid-cols-2 gap-2 bg-zinc-950 p-1 rounded-lg border border-zinc-800">
+                     {Object.values(AppMode).map(mode => (
+                         <button key={mode} onClick={() => handleModeChange(mode)} className={`py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${formData.objective === mode ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}>
+                             {mode}
+                         </button>
+                     ))}
+                 </div>
+               </div>
+             </div>
+
+             {isAdvanced && (
+               <div className="space-y-3 pt-4 border-t border-zinc-800">
+                  <h3 className="text-sm font-semibold text-zinc-400 flex items-center gap-2">Briefing Manual</h3>
+                  <textarea value={formData.userBrief} onChange={(e) => handleChange('userBrief', e.target.value)} placeholder="Descreva o contexto desejado..." className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-xs text-white h-24 outline-none resize-none focus:border-blue-500" />
+                  <button onClick={handleGenerateBrief} disabled={!formData.productName || isGeneratingBriefing} className="w-full bg-zinc-800 hover:bg-zinc-700 text-[10px] font-black uppercase text-zinc-300 py-3 rounded-lg flex items-center justify-center gap-2 border border-zinc-700 transition-all">
+                    {isGeneratingBriefing ? <Loader2 className="animate-spin w-3 h-3" /> : <Sparkles className="w-3 h-3 text-[#FCB82E]" />} Gerar Briefing (AI)
+                  </button>
+               </div>
+             )}
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="space-y-6 animate-slide-in">
+             <ReferenceUpload 
+              formData={formData} 
+              setFormData={setFormData} 
+              onAnalyze={onAnalyzeProduct} 
+              isAnalyzing={isAnalyzingProduct} 
+              productAnalysis={productAnalysis} 
+             />
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="space-y-6 animate-slide-in">
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-[#FCB82E] flex items-center gap-2"><Layout className="w-4 h-4" /> Direção de Arte</h3>
-                <div className="grid grid-cols-2 gap-3">
-                    <button 
-                        onClick={() => !isCatalog && handleChange('marketingDirection', 'Texto integrado')} 
-                        className={`py-2 px-3 rounded-lg border text-[10px] font-black uppercase transition-all ${
-                            formData.marketingDirection === 'Texto integrado' 
-                            ? 'bg-amber-900/20 border-[#FCB82E] text-[#FCB82E]' 
-                            : isCatalog ? 'bg-zinc-900 border-zinc-800 text-zinc-700 cursor-not-allowed' : 'bg-zinc-950 border-zinc-800 text-zinc-500'
-                        }`}
-                        title={isCatalog ? "Não disponível em modo Catálogo" : "Texto integrado"}
-                    >
-                        Texto Integrado {isCatalog && "(N/A)"}
-                    </button>
-                    <button onClick={() => handleChange('marketingDirection', 'Espaço reservado')} className={`py-2 px-3 rounded-lg border text-[10px] font-black uppercase transition-all ${formData.marketingDirection === 'Espaço reservado' ? 'bg-amber-900/20 border-[#FCB82E] text-[#FCB82E]' : 'bg-zinc-950 border-zinc-800 text-zinc-500'}`}>Espaço Reservado</button>
-                </div>
+                <h3 className="text-sm font-semibold text-[#FCB82E] flex items-center gap-2"><Layout className="w-4 h-4" /> Estética e Fotografia</h3>
                 
-                {!isCatalog && (
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                            <label className="text-[9px] font-bold text-zinc-500 uppercase">Tom de Marketing</label>
-                            <select value={formData.tone} onChange={e => handleChange('tone', e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-[10px] text-zinc-300 outline-none">
-                                {Object.values(MarketingTone).map(t => <option key={t} value={t}>{t}</option>)}
-                            </select>
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-[9px] font-bold text-zinc-500 uppercase">Presença Texto</label>
-                            <select value={formData.textPresence} onChange={e => handleChange('textPresence', e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-[10px] text-zinc-300 outline-none">
-                                {Object.values(TextPresence).map(p => <option key={p} value={p}>{p}</option>)}
-                            </select>
+                {isAdvanced && (
+                  <div className="space-y-3">
+                    <label className="text-[9px] font-bold text-zinc-500 uppercase">Estilo de Direção</label>
+                    <div className="grid grid-cols-2 gap-3">
+                        <button 
+                            onClick={() => !isCatalog && handleChange('marketingDirection', 'Texto integrado')} 
+                            className={`py-2 px-3 rounded-lg border text-[10px] font-black uppercase transition-all ${formData.marketingDirection === 'Texto integrado' ? 'bg-amber-900/20 border-[#FCB82E] text-[#FCB82E]' : isCatalog ? 'bg-zinc-900 border-zinc-800 text-zinc-700 cursor-not-allowed' : 'bg-zinc-950 border-zinc-800 text-zinc-500'}`}
+                            title={isCatalog ? "Não disponível em Catálogo" : "Texto inserido pela IA na cena."}
+                        >
+                            Texto Integrado
+                        </button>
+                        <button onClick={() => handleChange('marketingDirection', 'Espaço reservado')} className={`py-2 px-3 rounded-lg border text-[10px] font-black uppercase transition-all ${formData.marketingDirection === 'Espaço reservado' ? 'bg-amber-900/20 border-[#FCB82E] text-[#FCB82E]' : 'bg-zinc-950 border-zinc-800 text-zinc-500'}`} title="IA reserva espaço para textos de design.">Espaço Reservado</button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-zinc-500 uppercase block" title="Visão do produto (Frente, Lado ou de Cima)">Ângulo: {formData.angle === '3/4' ? 'De lado (3/4)' : formData.angle}</label>
+                        <select value={formData.angle} onChange={e => handleChange('angle', e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-[10px] text-zinc-300 outline-none">
+                            {Object.values(CameraAngle).map(v => <option key={v} value={v}>{v === '3/4' ? 'De lado (3/4)' : v}</option>)}
+                        </select>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-zinc-500 uppercase block" title="Tipo de sombra projetada no chão/superfície">Sombra</label>
+                        <select value={formData.shadow} onChange={e => handleChange('shadow', e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-[10px] text-zinc-300 outline-none">
+                            {Object.values(ShadowType).map(v => <option key={v} value={v}>{v}</option>)}
+                        </select>
+                    </div>
+                </div>
+
+                {isAdvanced && isCatalog && (
+                    <div className="space-y-2">
+                        <label className="text-[9px] font-bold text-zinc-500 uppercase">Fundo do Catálogo</label>
+                        <div className="grid grid-cols-3 gap-1.5">
+                            {['Branco Puro', 'Estúdio', 'Dia de Sol', 'Escuro'].map((bg) => (
+                                <button key={bg} onClick={() => handleChange('catalogBackground', bg)} className={`p-1.5 rounded text-[9px] font-bold uppercase border transition-all ${formData.catalogBackground === bg ? 'bg-blue-900/20 border-blue-500 text-blue-400' : 'bg-zinc-950 border-zinc-800 text-zinc-500'}`}>
+                                    {bg}
+                                </button>
+                            ))}
                         </div>
                     </div>
                 )}
+
+                {isSocial && isAdvanced && (
+                   <div className="space-y-3 pt-4 border-t border-zinc-800">
+                      <div className="flex justify-between items-center">
+                          <label className="text-[9px] font-bold text-zinc-500 uppercase">Cena / Ambientação</label>
+                          <button onClick={() => setShowAllAmbiences(!showAllAmbiences)} className="text-[9px] font-bold text-amber-500">Ver Todas</button>
+                      </div>
+                      <div className="space-y-2">
+                          {(showAllAmbiences ? allAmbiences : topAmbiences).map((amb) => (
+                              <button key={amb.id} onClick={() => handleChange('selectedAmbienceId', amb.id)} className={`w-full p-2.5 rounded-lg border text-left transition-all ${formData.selectedAmbienceId === amb.id ? 'bg-emerald-950/20 border-emerald-500 ring-1 ring-emerald-500/20' : 'bg-zinc-950 border-zinc-800'}`}>
+                                  <div className={`text-[10px] font-black uppercase ${formData.selectedAmbienceId === amb.id ? 'text-emerald-400' : 'text-zinc-300'}`}>{amb.title}</div>
+                                  <p className="text-[8px] text-zinc-500 truncate">{amb.description}</p>
+                              </button>
+                          ))}
+                      </div>
+                   </div>
+                )}
+
+                {isAdvanced && (
+                   <div className="space-y-2 bg-zinc-950 p-3 rounded-lg border border-zinc-800">
+                      <label className="text-[9px] font-bold text-zinc-400 uppercase">Acessórios (Props)</label>
+                      <div className="flex gap-2">
+                          <input type="text" value={newPropInput} onChange={(e) => setNewPropInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addProp()} placeholder="Ex: Alecrim, Gelo..." className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-[10px] text-white outline-none focus:border-amber-500" />
+                          <button onClick={addProp} className="p-1.5 bg-zinc-800 text-white rounded"><Plus className="w-3 h-3" /></button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                          {formData.props.map(prop => (
+                              <span key={prop} className="bg-zinc-800 px-2 py-0.5 rounded text-[8px] text-zinc-300 flex items-center gap-1">
+                                  {prop} <X className="w-2.5 h-2.5 cursor-pointer" onClick={() => removeProp(prop)} />
+                              </span>
+                          ))}
+                      </div>
+                   </div>
+                )}
               </div>
-
-              {!isPlaceholderMode && !isCatalog && (
-                  <div className="space-y-3 animate-fade-in">
-                      <h3 className="text-sm font-semibold text-purple-400 flex items-center gap-2"><Megaphone className="w-4 h-4" /> Copy do Post</h3>
-                      <input value={formData.socialCopyTitle} onChange={e => handleChange('socialCopyTitle', e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-white text-xs" placeholder="Título Impactante" />
-                      <input value={formData.socialCopySubtitle} onChange={e => handleChange('socialCopySubtitle', e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-white text-xs" placeholder="Subtítulo Descritivo" />
-                      <input value={formData.socialCopyOffer} onChange={e => handleChange('socialCopyOffer', e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-white text-xs" placeholder="Oferta / CTA" />
-                  </div>
-              )}
-
-              {isSocial && (
-                <div className="space-y-4 pt-4 border-t border-zinc-800">
-                    <div className="flex justify-between items-center">
-                        <h3 className="text-sm font-semibold text-emerald-400 flex items-center gap-2">
-                            <Palette className="w-4 h-4" /> Ambientação Visual
-                        </h3>
-                        <button onClick={() => setShowAllAmbiences(!showAllAmbiences)} className="text-[9px] font-bold text-zinc-500 flex items-center gap-1">
-                            {showAllAmbiences ? <ChevronDown className="w-3 h-3 rotate-180" /> : <ChevronDown className="w-3 h-3" />}
-                            {showAllAmbiences ? "Ver Menos" : `Ver Todas (${allAmbiences.length})`}
-                        </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-2">
-                        {(showAllAmbiences ? allAmbiences : topAmbiences).map((amb) => (
-                            <div
-                                key={amb.id}
-                                onClick={() => handleChange('selectedAmbienceId', amb.id)}
-                                className={`group p-3 rounded-xl border text-left transition-all relative cursor-pointer ${
-                                    formData.selectedAmbienceId === amb.id 
-                                    ? 'bg-emerald-950/20 border-emerald-500 ring-1 ring-emerald-500/20' 
-                                    : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'
-                                }`}
-                            >
-                                <div className="flex justify-between items-start pr-8">
-                                    <span className={`text-[10px] font-black uppercase ${formData.selectedAmbienceId === amb.id ? 'text-emerald-400' : 'text-zinc-300'}`}>
-                                        {amb.title}
-                                    </span>
-                                </div>
-                                <p className="text-[9px] text-zinc-500 leading-tight mt-1">{amb.description}</p>
-                                
-                                {amb.isCustom && (
-                                    <span 
-                                        role="button"
-                                        tabIndex={0}
-                                        onClick={(e) => { 
-                                            e.preventDefault();
-                                            e.stopPropagation(); 
-                                            removeCustomAmbience(amb.id); 
-                                        }}
-                                        className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-500 p-1 rounded hover:bg-zinc-800 transition-all cursor-pointer z-10"
-                                        title="Remover ambientação"
-                                    >
-                                        <Trash2 className="w-3 h-3" />
-                                    </span>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-
-                    <div className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl space-y-2 border-dashed">
-                        <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-500 uppercase"><Plus className="w-3 h-3" /> Criar Customizada</div>
-                        <input value={newAmbTitle} onChange={e => setNewAmbTitle(e.target.value)} placeholder="Título" className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-xs text-white" />
-                        <textarea value={newAmbDesc} onChange={e => setNewAmbDesc(e.target.value)} placeholder="Descrição da cena..." className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-xs text-white h-16 resize-none" />
-                        <button onClick={handleAddCustomAmbience} disabled={!newAmbTitle || !newAmbDesc} className="w-full bg-emerald-600 text-white text-[10px] font-black uppercase py-2 rounded-lg transition-all disabled:opacity-30">Salvar Ambientação</button>
-                    </div>
-                </div>
-              )}
           </div>
+        )}
+      </div>
 
-          <div className="space-y-2 bg-zinc-950 p-3 rounded-lg border border-zinc-800">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase">Acessórios de Cena (Props)</label>
-              <div className="flex gap-2">
-                  <input 
-                      type="text" 
-                      value={newPropInput}
-                      onChange={(e) => setNewPropInput(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && addProp()}
-                      placeholder="Ex: Alecrim, Fumaça, Tecido..." 
-                      className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-xs text-white outline-none focus:border-amber-500"
-                  />
-                  <button onClick={addProp} className="p-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded"><Plus className="w-4 h-4" /></button>
-              </div>
-              {formData.props.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-2">
-                      {formData.props.map(prop => (
-                          <span key={prop} className="bg-zinc-800 border border-zinc-700 px-2 py-1 rounded text-[10px] text-zinc-300 flex items-center gap-1 group">
-                              {prop} <X className="w-3 h-3 cursor-pointer text-zinc-500 group-hover:text-red-400" onClick={() => removeProp(prop)} />
-                          </span>
-                      ))}
-                  </div>
+      {/* Footer com Navegação e Gerar */}
+      <div className="p-4 bg-zinc-950 border-t border-zinc-800 space-y-3">
+          <div className="flex gap-3">
+              {step > 1 && (
+                  <button onClick={prevStep} className="flex-1 py-3 bg-zinc-900 text-zinc-400 rounded-xl font-bold text-[10px] uppercase border border-zinc-800 hover:bg-zinc-800 flex items-center justify-center gap-2">
+                      <ChevronLeft className="w-3 h-3" /> Voltar
+                  </button>
               )}
-          </div>
-
-          {isCatalog && (
-              <div className="space-y-4 pt-4 border-t border-zinc-800">
-                  <h3 className="text-sm font-semibold text-blue-400 flex items-center gap-2">
-                      <Palette className="w-4 h-4" /> Fundo do Catálogo
-                  </h3>
-                  <div className="grid grid-cols-2 gap-2">
-                      {['Branco Puro', 'Estúdio', 'Dia de Sol', 'Amarelado', 'Escuro', 'Customizado'].map((bg) => (
-                          <button
-                            key={bg}
-                            onClick={() => handleChange('catalogBackground', bg)}
-                            className={`p-2 rounded text-[10px] font-bold uppercase transition-all ${
-                                formData.catalogBackground === bg 
-                                ? 'bg-blue-900/40 border border-blue-500 text-blue-400' 
-                                : 'bg-zinc-950 border border-zinc-800 text-zinc-500 hover:bg-zinc-900'
-                            }`}
+              {step < 3 ? (
+                  <button 
+                    onClick={nextStep} 
+                    disabled={step === 1 && !canAdvanceStep1}
+                    className="flex-[2] py-3 bg-amber-600 text-white rounded-xl font-bold text-[10px] uppercase hover:bg-amber-500 flex items-center justify-center gap-2 disabled:opacity-30"
+                  >
+                      Continuar <ChevronRight className="w-3 h-3" />
+                  </button>
+              ) : (
+                  <div className="flex-[2] space-y-2">
+                      <div className="bg-zinc-900/50 p-2 rounded-lg border border-zinc-800 text-center">
+                          <p className="text-[9px] text-zinc-500 font-bold uppercase">Resumo da Geração</p>
+                          <p className="text-[10px] text-zinc-300">
+                             2 variações em <b>{formData.defaultAspectRatio}</b>, estilo <b>{formData.objective}</b>, 
+                             com <b>{formData.referenceImages.length}</b> ref.
+                          </p>
+                      </div>
+                      <div className="flex gap-2">
+                          <button 
+                            onClick={handleLocalPreview}
+                            className="flex-1 py-3 bg-zinc-800 text-zinc-400 rounded-xl font-bold text-[10px] uppercase border border-zinc-700 hover:bg-zinc-700 flex items-center justify-center gap-2 transition-all"
+                            title="Ver o prompt técnico e resumo antes de gerar."
                           >
-                              {bg}
+                            <Eye className="w-4 h-4" /> Preview
                           </button>
-                      ))}
+                          <button 
+                            onClick={onGenerate} 
+                            disabled={isGenerating || !canGenerate} 
+                            className={`flex-[2] py-3 text-black rounded-xl font-black text-[10px] uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 transition-all ${!canGenerate ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed' : 'bg-[#FCB82E] hover:bg-[#e5a72a]'}`}
+                          >
+                            {isGenerating ? <Loader2 className="animate-spin h-4 w-4" /> : <Sparkles className="w-4 h-4" />} 
+                            {isGenerating ? "Na Fila..." : "Gerar Agora"}
+                          </button>
+                      </div>
                   </div>
-              </div>
-          )}
-
-          <div className="space-y-4 pt-4 border-t border-zinc-800">
-            <h3 className="text-sm font-semibold text-blue-400 flex items-center gap-2">
-                <Settings2 className="w-4 h-4" /> Parâmetros Studio
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
-                <div>
-                    <label className="block text-[10px] font-bold text-zinc-500 mb-1 uppercase">Ângulo</label>
-                    <select value={formData.angle} onChange={(e) => handleChange('angle', e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-[10px] text-zinc-300">
-                        {Object.values(CameraAngle).map(v => <option key={v} value={v}>{v}</option>)}
-                    </select>
-                </div>
-                <div>
-                    <label className="block text-[10px] font-bold text-zinc-500 mb-1 uppercase">Sombra</label>
-                    <select value={formData.shadow} onChange={(e) => handleChange('shadow', e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-[10px] text-zinc-300">
-                        {Object.values(ShadowType).map(v => <option key={v} value={v}>{v}</option>)}
-                    </select>
-                </div>
-            </div>
+              )}
           </div>
-
-          <button 
-            onClick={onGenerate} 
-            disabled={isGenerating || !canGenerate} 
-            className={`w-full py-4 text-black rounded-xl font-black text-sm uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 transition-all ${
-                !canGenerate 
-                  ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed' 
-                  : 'bg-[#FCB82E] hover:bg-[#e5a72a]'
-            }`}
-          >
-            {isGenerating ? <Loader2 className="animate-spin h-5 w-5" /> : <Sparkles className="w-5 h-5" />} 
-            {canGenerate ? "Gerar 2 Variações" : "Preencha o Nome"}
-          </button>
       </div>
     </div>
   );

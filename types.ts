@@ -85,9 +85,9 @@ export interface FormData {
   material: string;
   
   // Briefing System
-  baseBrief: string;       // Layer A (System/Fixed)
-  userBrief: string;       // Layer B (User Input)
-  finalBriefPt: string;    // Merge Result
+  baseBrief: string;       
+  userBrief: string;       
+  finalBriefPt: string;    
   
   briefingStatus: 'automático' | 'personalizado' | 'vazio';
 
@@ -101,11 +101,10 @@ export interface FormData {
   angle: CameraAngle;
   shadow: ShadowType;
   background: BackgroundType;
-  catalogBackground?: CatalogBackgroundType; // Novo campo específico para catálogo
+  catalogBackground?: CatalogBackgroundType; 
   props: string[];
   customProps: string;
   
-  // Post Social Specific
   socialCopyTitle: string;
   socialCopySubtitle: string;
   socialCopyOffer: string;
@@ -123,9 +122,12 @@ export interface FormData {
   activeVariation: string;
   customPersonalization: string; 
   
-  // Preset fields
   defaultAspectRatio: AspectRatio;
   defaultRotation: RotationDegree;
+
+  // UI Control Fields
+  uiMode: 'simple' | 'advanced';
+  wizardStep: number;
 }
 
 export interface GeneratedPrompt {
@@ -142,12 +144,11 @@ export interface GeneratedPrompt {
   finalPromptEn?: string; 
 }
 
-// Configuração visual da Layer de Texto
 export interface TextLayerConfig {
-  yPercent: number; // Posição vertical em % (0-100)
+  yPercent: number; 
   visible: boolean;
-  scale: number; // Multiplicador de tamanho
-  color?: string; // Cor do texto (Hex)
+  scale: number; 
+  color?: string; 
 }
 
 export type TextStyle = 'modern' | 'classic' | 'bold' | 'ribbon' | 'banner';
@@ -164,18 +165,17 @@ export interface GalleryItem {
   isRegenerated?: boolean;
   isEdited?: boolean;
   status: 'draft' | 'queued' | 'rendering' | 'completed' | 'error';
+  errorMessage?: string;
   
-  // Configuração visual persistente dos textos
   textLayerSettings?: {
     title: TextLayerConfig;
     subtitle: TextLayerConfig;
     offer: TextLayerConfig;
   };
 
-  textStyle?: TextStyle; // Novo campo para estilo do texto
-  renderMode?: 'integrated' | 'layer'; // Novo campo para modo de renderização
+  textStyle?: TextStyle; 
+  renderMode?: 'integrated' | 'layer'; 
 
-  // Snapshot para regeneração determinística
   creationSettings?: {
     objective: AppMode;
     background: BackgroundType;
@@ -224,24 +224,28 @@ export interface Preset {
   showNegativePrompts: boolean;
 }
 
-// --- NOVAS INTERFACES PARA O SISTEMA LEVE ---
-
 export interface HistoryMetadata {
   id: string;
-  date: string; // ISO
+  date: string; 
   productName: string;
   presetUsed: string;
   ambienceTitle?: string;
   aspectRatio: string;
-  promptFinalEn: string; // Prompt técnico final (o mais valioso)
-  tags: string[]; // ex: ['Post Social', 'Texto integrado']
+  promptFinalEn: string; 
+  tags: string[]; 
 }
 
 export interface BackupPayload {
-  version: string; // Alterado para string ('4.0')
+  version: string; 
   exportedAt: string;
   presets: Preset[];
   ambiences: Ambience[];
   history: HistoryMetadata[];
-  currentDraft?: FormData; // Opcional: Inclui o estado atual com imagens
+  currentDraft?: FormData; 
+}
+
+export interface PromptPreviewData {
+  title: string;
+  pt: string;
+  en: string;
 }

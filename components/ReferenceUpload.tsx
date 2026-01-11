@@ -1,23 +1,35 @@
 
 import React, { useRef } from 'react';
-import { Upload, X, Image as ImageIcon, Star, Trash2, Users, PenTool } from 'lucide-react';
+import { Upload, X, Image as ImageIcon, Star, Trash2, Users, PenTool, AlertTriangle, Info, Plus, Search, Loader2, CheckCircle } from 'lucide-react';
 import { FormData, ReferenceImage, ReferenceUsageType } from '../types';
 import { REFERENCE_USAGE_TYPES } from '../constants';
 
 interface ReferenceUploadProps {
   formData: FormData;
   setFormData: React.Dispatch<React.SetStateAction<FormData>>;
+  onAnalyze?: () => void;
+  isAnalyzing?: boolean;
+  productAnalysis?: string | null;
 }
 
-export const ReferenceUpload: React.FC<ReferenceUploadProps> = ({ formData, setFormData }) => {
+export const ReferenceUpload: React.FC<ReferenceUploadProps> = ({ 
+  formData, 
+  setFormData, 
+  onAnalyze, 
+  isAnalyzing, 
+  productAnalysis 
+}) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const processFile = (file: File) => {
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
-      alert(`Formato não suportado: ${file.name}. Use PNG, JPG ou WEBP.`);
+      alert(`Formato não suportado: ${file.name}`);
       return;
     }
     const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+    if (parseFloat(sizeMb) > 4) {
+        if (!confirm(`Imagem grande (${sizeMb}MB). Imagens acima de 4MB podem demorar ou falhar. Deseja continuar?`)) return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       const dataUrl = e.target?.result as string;
@@ -36,11 +48,7 @@ export const ReferenceUpload: React.FC<ReferenceUploadProps> = ({ formData, setF
             isHero: isFirst,
             usageType: 'Formato'
           };
-          return {
-            ...prev,
-            referenceImages: [...prev.referenceImages, newImage],
-            useRefImages: true
-          };
+          return { ...prev, referenceImages: [...prev.referenceImages, newImage], useRefImages: true };
         });
       };
       img.src = dataUrl;
@@ -48,41 +56,15 @@ export const ReferenceUpload: React.FC<ReferenceUploadProps> = ({ formData, setF
     reader.readAsDataURL(file);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) Array.from(e.target.files).forEach(processFile);
-  };
-
   const setHero = (id: string) => {
-    setFormData(prev => ({
-      ...prev,
-      referenceImages: prev.referenceImages.map(img => ({
-        ...img,
-        isHero: img.id === id
-      }))
-    }));
-  };
-
-  const setUsageType = (id: string, type: ReferenceUsageType) => {
-    setFormData(prev => ({
-      ...prev,
-      referenceImages: prev.referenceImages.map(img => ({
-        ...img,
-        usageType: img.id === id ? type : img.usageType
-      }))
-    }));
+    setFormData(prev => ({ ...prev, referenceImages: prev.referenceImages.map(img => ({ ...img, isHero: img.id === id })) }));
   };
 
   const removeImage = (id: string) => {
     setFormData(prev => {
       const newImages = prev.referenceImages.filter(img => img.id !== id);
-      if (newImages.length > 0 && !newImages.some(i => i.isHero)) {
-        newImages[0].isHero = true;
-      }
-      return {
-        ...prev,
-        referenceImages: newImages,
-        useRefImages: newImages.length > 0
-      };
+      if (newImages.length > 0 && !newImages.some(i => i.isHero)) newImages[0].isHero = true;
+      return { ...prev, referenceImages: newImages, useRefImages: newImages.length > 0 };
     });
   };
 
@@ -90,144 +72,89 @@ export const ReferenceUpload: React.FC<ReferenceUploadProps> = ({ formData, setF
 
   return (
     <div className="space-y-6">
-      {/* Hero Preview Section */}
       <div className="space-y-2">
         <div className="flex justify-between items-center">
-            <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
-                <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
-                Imagem Principal (HERO)
+            <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-2">
+                <Star className="w-3 h-3 text-amber-500 fill-amber-500" /> Imagem Principal (HERO)
             </label>
+            <span className="text-[9px] text-zinc-600">Recomendado: 1 a 3 imagens</span>
         </div>
         
         {heroImage ? (
-            <div className="relative aspect-square w-full bg-zinc-950 rounded-xl overflow-hidden border border-amber-500/30 group">
-                <img src={heroImage.dataUrl} alt="Hero" className="w-full h-full object-contain" />
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                    <button 
-                        onClick={() => removeImage(heroImage.id)}
-                        className="bg-red-600 text-white p-2 rounded-lg hover:bg-red-500 shadow-xl"
-                    >
-                        <Trash2 className="w-5 h-5" />
-                    </button>
-                </div>
-                <div className="absolute top-3 left-3 bg-amber-500 text-black text-[10px] font-black px-2 py-0.5 rounded shadow-lg uppercase">
-                    HERO PREVIEW
-                </div>
+            <div className="space-y-3">
+              <div className="relative aspect-square w-full bg-zinc-950 rounded-xl overflow-hidden border border-amber-500/30 group">
+                  <img src={heroImage.dataUrl} alt="Hero" className="w-full h-full object-contain" />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                      <button onClick={() => removeImage(heroImage.id)} className="bg-red-600 text-white p-2 rounded-lg hover:bg-red-500 shadow-xl"><Trash2 className="w-5 h-5" /></button>
+                  </div>
+                  <div className="absolute top-3 left-3 bg-amber-500 text-black text-[9px] font-black px-2 py-0.5 rounded shadow-lg uppercase">HERO Ativa</div>
+              </div>
+
+              <div className="space-y-2">
+                <button 
+                  onClick={onAnalyze} 
+                  disabled={isAnalyzing}
+                  className="w-full py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-2 transition-all border border-zinc-700"
+                >
+                  {isAnalyzing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
+                  {isAnalyzing ? "Analisando..." : "Analisar Produto (AI)"}
+                </button>
+                
+                {productAnalysis && (
+                  <div className="p-3 bg-emerald-950/20 border border-emerald-900/50 rounded-lg flex gap-2 animate-fade-in">
+                    <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <div>
+                      <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">IA: Produto Detectado</p>
+                      <p className="text-[10px] text-zinc-300 italic">"{productAnalysis}"</p>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
         ) : (
-            <div 
-                onClick={() => fileInputRef.current?.click()}
-                className="aspect-square w-full border-2 border-dashed border-zinc-800 rounded-xl flex flex-col items-center justify-center bg-zinc-900/30 hover:bg-zinc-900/50 hover:border-amber-500/50 cursor-pointer transition-all group"
-            >
-                <Upload className="w-10 h-10 text-zinc-700 group-hover:text-amber-500 mb-3 transition-colors" />
-                <p className="text-sm text-zinc-500 font-medium">Envie a imagem HERO do produto</p>
-                <p className="text-[10px] text-zinc-600 mt-1">PNG, JPG ou WEBP suportados</p>
+            <div onClick={() => fileInputRef.current?.click()} className="aspect-square w-full border-2 border-dashed border-zinc-800 rounded-xl flex flex-col items-center justify-center bg-zinc-900/30 hover:bg-zinc-900/50 hover:border-amber-500/50 cursor-pointer transition-all group">
+                <Upload className="w-8 h-8 text-zinc-700 group-hover:text-amber-500 mb-2" />
+                <p className="text-xs text-zinc-500 font-bold uppercase">Clique para enviar</p>
+                <p className="text-[9px] text-zinc-600 mt-1">PNG, JPG ou WEBP</p>
             </div>
         )}
       </div>
 
-      {/* Multi-upload & Grid Section */}
-      <div className="space-y-4">
-        <div className="flex justify-between items-center">
-            <h3 className="text-sm font-semibold text-zinc-300 flex items-center gap-2">
-                <ImageIcon className="w-4 h-4 text-pink-500" /> Galeria de Referências
-            </h3>
-            <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1 rounded border border-zinc-700"
-            >
-                Adicionar mais
-            </button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 max-h-60 overflow-y-auto custom-scrollbar pr-2">
-            <input type="file" ref={fileInputRef} className="hidden" multiple accept="image/*" onChange={handleFileChange} />
-            
-            {formData.referenceImages.map(img => (
-                <div key={img.id} className={`relative bg-zinc-950 rounded-lg border p-2 flex flex-col gap-2 transition-all ${img.isHero ? 'border-amber-500/50 ring-1 ring-amber-500/20' : 'border-zinc-800'}`}>
-                    <div className="relative aspect-video rounded overflow-hidden bg-zinc-900">
-                        <img src={img.dataUrl} alt="ref" className="w-full h-full object-cover" />
-                        <button 
-                            onClick={() => removeImage(img.id)}
-                            className="absolute top-1 right-1 p-1 bg-black/60 text-white hover:text-red-400 rounded"
-                        >
-                            <X className="w-3 h-3" />
-                        </button>
-                        {img.isHero && (
-                            <div className="absolute top-1 left-1 bg-amber-500 text-black p-0.5 rounded shadow">
-                                <Star className="w-2.5 h-2.5 fill-black" />
-                            </div>
-                        )}
-                    </div>
-                    
-                    <div className="space-y-1.5">
-                        <select 
-                            value={img.usageType}
-                            onChange={(e) => setUsageType(img.id, e.target.value as any)}
-                            className="w-full bg-zinc-900 border border-zinc-800 text-[9px] text-zinc-400 rounded px-1 py-0.5 outline-none focus:border-pink-500"
-                        >
-                            {REFERENCE_USAGE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                        
-                        {!img.isHero && (
-                            <button 
-                                onClick={() => setHero(img.id)}
-                                className="w-full py-1 text-[8px] font-bold uppercase tracking-tight text-zinc-500 hover:text-amber-500 border border-zinc-800 hover:border-amber-500/30 rounded transition-all"
-                            >
-                                Definir como HERO
-                            </button>
-                        )}
-                    </div>
+      {formData.referenceImages.length > 1 && (
+        <div className="grid grid-cols-3 gap-2">
+            {formData.referenceImages.map(img => !img.isHero && (
+                <div key={img.id} className="relative aspect-square bg-zinc-950 rounded-lg border border-zinc-800 overflow-hidden group">
+                    <img src={img.dataUrl} alt="ref" className="w-full h-full object-cover" />
+                    <button onClick={() => setHero(img.id)} className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"><Star className="w-4 h-4 text-white" /></button>
                 </div>
             ))}
+            <div onClick={() => fileInputRef.current?.click()} className="aspect-square border border-dashed border-zinc-800 rounded-lg flex items-center justify-center hover:bg-zinc-900 cursor-pointer text-zinc-700 transition-colors"><Plus className="w-5 h-5" /></div>
         </div>
-      </div>
+      )}
+      <input type="file" ref={fileInputRef} className="hidden" multiple accept="image/*" onChange={e => e.target.files && Array.from(e.target.files).forEach(processFile)} />
 
-      {/* Personalization Section */}
-      <div className="bg-zinc-950/50 p-4 rounded-xl border border-zinc-800 space-y-4">
+      <div className="bg-zinc-950/50 p-4 rounded-xl border border-zinc-800 space-y-4 shadow-sm">
           <div className="flex items-center gap-2 text-zinc-300">
               <Users className="w-4 h-4 text-purple-500" />
-              <h3 className="text-sm font-semibold">Controle de Personalização</h3>
+              <h3 className="text-sm font-semibold">Configurações de Fidelidade</h3>
           </div>
           
-          <div className="space-y-2">
-              <label className="text-[10px] text-zinc-500 uppercase flex items-center gap-1">
-                  <PenTool className="w-3 h-3" /> Alterar Personalização (Sobrescrever)
-              </label>
-              <textarea 
-                  value={formData.customPersonalization}
-                  onChange={(e) => setFormData(prev => ({ ...prev, customPersonalization: e.target.value }))}
-                  placeholder="Ex: Trocar logo para 'Apple'. Escrever 'Feliz Natal'. Remover texto lateral."
-                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-xs text-white focus:ring-1 focus:ring-purple-500 outline-none resize-none placeholder:text-zinc-600"
-                  rows={2}
-              />
+          <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                  <input type="checkbox" id="lockFid" checked={formData.lockProduct} onChange={(e) => setFormData(p => ({ ...p, lockProduct: e.target.checked }))} className="w-4 h-4 accent-blue-500 rounded bg-zinc-900 border-zinc-700" />
+                  <label htmlFor="lockFid" className="text-[11px] text-zinc-400 cursor-pointer flex items-center gap-1 font-bold">Travar silhueta e logo <Info className="w-2.5 h-2.5" title="Garante que o formato e logos da HERO não mudem." /></label>
+              </div>
+              {formData.lockProduct && (
+                  <div className="p-2 bg-blue-900/10 border border-blue-900/30 rounded-lg flex gap-2">
+                      <AlertTriangle className="w-3 h-3 text-blue-500 shrink-0 mt-0.5" />
+                      <p className="text-[9px] text-blue-400 leading-tight"><b>Nota:</b> Travamento de fidelidade pode limitar sombras naturais e iluminação artística extrema.</p>
+                  </div>
+              )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4 pt-2 border-t border-zinc-800">
-              <div className="flex items-center gap-2">
-                  <input 
-                    type="checkbox" 
-                    id="lockFid" 
-                    checked={formData.lockProduct}
-                    onChange={(e) => setFormData(p => ({ ...p, lockProduct: e.target.checked }))}
-                    className="accent-blue-500"
-                  />
-                  <label htmlFor="lockFid" className="text-[11px] text-zinc-400 cursor-pointer">
-                      Travar produto (fidelidade)
-                  </label>
-              </div>
-              <div className="flex items-center gap-2">
-                  <input 
-                    type="checkbox" 
-                    id="prioritizeFid" 
-                    checked={formData.prioritizeFidelity}
-                    onChange={(e) => setFormData(p => ({ ...p, prioritizeFidelity: e.target.checked }))}
-                    className="accent-green-500"
-                  />
-                  <label htmlFor="prioritizeFid" className="text-[11px] text-zinc-400 cursor-pointer">
-                      Fidelidade máxima
-                  </label>
-              </div>
+          <div className="space-y-2 pt-2 border-t border-zinc-800">
+              <label className="text-[9px] text-zinc-500 uppercase flex items-center gap-1"><PenTool className="w-3 h-3" /> Mudança Específica (Opcional)</label>
+              <textarea value={formData.customPersonalization} onChange={(e) => setFormData(p => ({ ...p, customPersonalization: e.target.value }))} placeholder="Ex: Mudar nome na tábua de 'Joao' para 'Maria'." className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2.5 text-[10px] text-white outline-none resize-none focus:border-amber-500 transition-all" rows={2} />
           </div>
       </div>
     </div>

@@ -12,6 +12,29 @@ export const PROPS_OPTIONS = [
   "Luz natural"
 ];
 
+export const TECHNICAL_PROFILES = {
+  CAMERA: {
+    [CameraAngle.FRONT]: "Eye-level shot, 85mm lens, f/8 aperture, straight-on perspective, sharp focus on product details.",
+    [CameraAngle.THREE_QUARTERS]: "Three-quarter view, 50mm lens, f/11 aperture, professional product placement, deep depth of field.",
+    [CameraAngle.TOP]: "Top-down overhead shot, 35mm flat lay lens, f/8, symmetrical composition, zero distortion."
+  },
+  LIGHTING: {
+    [ShadowType.CONTACT]: "Strong key light from 45 degrees, subtle fill light, sharp contact shadow, high contrast studio lighting.",
+    [ShadowType.SOFT]: "Large softbox overhead, wrap-around lighting, gentle rim light, ray-traced soft shadows, global illumination.",
+    [ShadowType.MEDIUM]: "Classic three-point lighting setup, softbox key, umbrella fill, hair light for rim definition, realistic specular highlights.",
+    [ShadowType.STRONG]: "Hard direct light source, high-contrast shadows, dramatic chiaroscuro effect, clean highlights.",
+    [ShadowType.NONE]: "Flat lighting, high-key studio environment, shadowless render, even illumination across all surfaces."
+  },
+  MATERIALS: {
+    wood: "Natural wood grain texture, realistic pores, satin finish, warm organic feel.",
+    metal: "Brushed metal surface, anisotropic specular highlights, realistic reflections, cold industrial texture.",
+    glass: "Physically accurate refraction, clear transparency, caustic light effects, realistic specular glints.",
+    plastic: "Subtle micro-scratches, realistic roughness map, matte finish, authentic material density.",
+    leather: "Detailed hide texture, organic grain, soft specular sheen, realistic stitching details.",
+    ceramic: "Smooth glazed finish, soft clay reflections, clean porcelain texture, subsurface scattering."
+  }
+};
+
 export const BASE_BRIEF_TEXT = `[REGRAS VISUAIS FIXAS - INOVAÇÃO ENTALHE]:
 1. Fotografia profissional de estúdio, alta resolução (8k), texturas realistas.
 2. Iluminação controlada para valorizar o relevo e o material do produto.
@@ -57,17 +80,20 @@ export const INITIAL_FORM_STATE: FormData = {
 
   defaultAspectRatio: '1:1',
   defaultRotation: 0,
+
+  uiMode: 'simple',
+  wizardStep: 1
 };
 
 export const MANDATORY_STRINGS = {
-  CATALOG: "PURE CATALOG PHOTOGRAPHY. NO SCENERY. NO ENVIRONMENT. NO BACKGROUND ELEMENTS. The product must be on a totally neutral, clean, solid background (pure white or studio grey). Focus on product geometry and materials only. Technical lighting.",
-  SOCIAL: "High-end commercial marketing post. Realistic environment. Professional studio lighting, 8k resolution, premium textures.",
+  CATALOG: "PRO CATALOG SHOT. Clean solid background. Pure studio environment. Focus on geometry and texture. Professional commercial photography.",
+  SOCIAL: "High-end lifestyle commercial marketing. Premium realistic environment. Cinematic lighting. Contextualized composition.",
   
-  NEGATIVE_SUFFIX: "text, typography, letters, numbers, symbols, writing, watermark, logo, signature, blurry, distorted, low quality, warped, extra parts, unreadable, artistic blur, depth of field, vignette, dark corners, altered product shape, changed logo, missing engraving, wrong proportions, morphing, words, alphabets.",
+  NEGATIVE_SUFFIX: "text, typography, letters, numbers, symbols, writing, watermark, logo, signature, blurry, distorted, low quality, warped, extra parts, unreadable, artistic blur, vignette, dark corners, altered product shape, changed logo, missing engraving, wrong proportions, morphing, words, alphabets, messy background, cluttered scene.",
   
-  FIDELITY_RULES: "CRITICAL: The attached HERO image is the ABSOLUTE geometry reference. DO NOT CHANGE product design, engravings, text on wood, or logos. The product in the generated image must be IDENTICAL to the reference image in terms of shape, material, and personalization details.",
+  FIDELITY_RULES: "CRITICAL: The attached HERO image is the ABSOLUTE reference. Maintain exact silhouette, proportions, and product identity. Do not change engravings or textures. Zero deformation.",
   
-  NO_TEXT_ENFORCEMENT: "DO NOT RENDER ANY TEXT. Clean image only. No letters, no symbols."
+  NO_TEXT_ENFORCEMENT: "DO NOT RENDER ANY TEXT OR LOGOS OTHER THAN WHAT IS IN THE REFERENCE. Clean image only."
 };
 
 export const ASPECT_RATIO_TECHNICAL_TEXTS: Record<AspectRatio, string> = {
@@ -86,7 +112,7 @@ export const SYSTEM_PRESETS: Preset[] = [
   {
     id: 'sys_catalogo_ml',
     name: 'Catálogo — Mercado Livre (Branco)',
-    description: 'Fundo branco puro, iluminação técnica, foco total, sem props.',
+    description: 'Fundo branco puro, iluminação técnica softbox, foco total, nitidez 8k.',
     isSystem: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -95,7 +121,7 @@ export const SYSTEM_PRESETS: Preset[] = [
     marketingDirection: 'Espaço reservado',
     copyTone: MarketingTone.SALES,
     aspectRatio: '1:1',
-    angle: CameraAngle.FRONT,
+    angle: CameraAngle.THREE_QUARTERS,
     shadow: ShadowType.SOFT,
     background: BackgroundType.WHITE,
     propsEnabled: false,
@@ -108,8 +134,8 @@ export const SYSTEM_PRESETS: Preset[] = [
   },
   {
     id: 'sys_social_scene',
-    name: 'Post Social — Churrasco Realista',
-    description: 'Ambientação de churrasco, carnes sobre a tábua, luz natural.',
+    name: 'Post Social — Premium Lifestyle',
+    description: 'Ambientação realista, iluminação cinematográfica, carnes e ervas.',
     isSystem: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -119,10 +145,10 @@ export const SYSTEM_PRESETS: Preset[] = [
     copyTone: MarketingTone.CREATIVE,
     aspectRatio: '3:4',
     angle: CameraAngle.THREE_QUARTERS,
-    shadow: ShadowType.SOFT,
+    shadow: ShadowType.MEDIUM,
     background: BackgroundType.SCENE_CONTEXT,
     propsEnabled: true,
-    propsList: ["Carne fatiada", "Sal grosso"],
+    propsList: ["Carne fatiada", "Sal grosso", "Ervas"],
     propsPolicy: 'livre',
     useReferenceImages: true,
     lockProductFidelity: true,
