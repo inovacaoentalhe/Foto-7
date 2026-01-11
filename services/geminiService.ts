@@ -29,8 +29,8 @@ export const correctPortuguese = async (text: string): Promise<string> => {
       const ai = getAiClient();
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Corrija estritamente a gramática PT-BR deste briefing de imagem, sem mudar o sentido técnico: "${text}"`,
-        config: { systemInstruction: "Você é um revisor técnico de marketing." }
+        contents: `Corrija estritamente a gramática PT-BR deste briefing técnico, mantendo a estrutura de tópicos: "${text}"`,
+        config: { systemInstruction: "Você é um revisor de prompts de estúdio fotográfico." }
       });
       return response.text?.trim() || text;
   });
@@ -66,21 +66,26 @@ export const suggestFieldsFromBriefing = async (formData: FormData): Promise<Par
 export const generateCreativePrompts = async (formData: FormData): Promise<GeneratedPrompt[]> => {
   return executeWithRetry(async () => {
       const ai = getAiClient();
-      const isCatalog = formData.objective === AppMode.CATALOG;
       
-      const systemInstruction = `Você é um Engenheiro de Prompts.
-      OBJETIVO: ${formData.objective}.
-      REGRAS: 
-      - Se for Catálogo: Fundo BRANCO OU CINZA NEUTRO apenas. Sem cenários. Sem pessoas. Foco total no produto.
-      - Se for Social: Criar ambientação realista.
-      - NUNCA adicionar texto decorativo na imagem, EXCETO se solicitado especificamente na PERSONALIZAÇÃO.
-      - FIDELIDADE: O produto deve ter os mesmos entalhes e logos da referência, A MENOS que o campo de PERSONALIZAÇÃO solicite alteração.`;
+      const systemInstruction = `Você é um Engenheiro de Prompts Sênior.
+      ESTRUTURA OBRIGATÓRIA DO PROMPT (PT-BR):
+      ■ PRODUTO: [Descrição do item e material]
+      ■ CENÁRIO: [Ambientação e luz]
+      ■ PERSONALIZAÇÃO: [Texto/Logo/Nomes específicos a serem alterados]
+      ■ PROPS: [Acessórios de cena]
+      ■ ESTILO: [Ângulo e fotografia]
+
+      REGRAS:
+      - Se o usuário pedir para trocar um nome (ex: "Edivaldo por Sergio"), coloque isso claramente em PERSONALIZAÇÃO.
+      - Mantenha os tópicos separados e limpos.
+      - Não repita informações entre os tópicos.`;
 
       const parts: any[] = [{ 
-        text: `Gere 2 variações para: ${formData.productName}. 
+        text: `Gere 2 variações criativas seguindo a ESTRUTURA acima. 
+        Produto: ${formData.productName}. 
         Material: ${formData.material}.
-        Briefing: ${formData.userBrief}.
-        ALTERAÇÕES DE PERSONALIZAÇÃO/SOBREPOSIÇÃO: ${formData.customPersonalization || "Manter original da referência"}.` 
+        Cenário desejado: ${formData.userBrief || "Estúdio profissional"}.
+        Personalização solicitada: ${formData.customPersonalization || "Manter original"}.` 
       }];
       
       const heroImage = formData.referenceImages.find(img => img.isHero);
@@ -119,50 +124,36 @@ export const prepareTechnicalPrompt = async (
   settings: any,
   referenceImages: ReferenceImage[]
 ) => {
-  const isCatalog = settings.objective === AppMode.CATALOG;
   const ai = getAiClient();
+  const isCatalog = settings.objective === AppMode.CATALOG;
 
-  // Tradução do prompt principal
+  // Tradução Estruturada: Traduz cada tópico mantendo a divisão
   const translation = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Translate to English focusing ONLY on technical visual description (materials, lighting, sharpness), DO NOT add creative flair: "${promptPt}"`
+    contents: `Translate this structured prompt to technical English, maintaining the format with bullet points (■): "${promptPt}"`
   });
   const promptEnTranslated = translation.text || promptPt;
 
-  // Tradução da personalização se existir
-  let customizationEn = "";
-  if (settings.customPersonalization) {
-    const customTrans = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Translate this specific product customization instruction to technical English: "${settings.customPersonalization}"`
-    });
-    customizationEn = customTrans.text || settings.customPersonalization;
-  }
-
-  const customizationBlock = customizationEn 
-    ? `CUSTOM PERSONALIZATION (PRIORITY OVERRIDE): ${customizationEn}. Change only the specific part mentioned, keeping all other product traits from the reference.` 
+  // Bloco de Comando Mestre (Sobreposição de Personalização)
+  const customizationOverride = settings.customPersonalization 
+    ? `\n[OVERRIDE PERSONALIZATION]: APPLY THE FOLLOWING CHANGE TO THE REFERENCE IMAGE: ${settings.customPersonalization}. Ensure text accuracy.` 
     : "";
 
-  // Montagem do Prompt com base na Hierarquia de Autoridade
   let finalPromptEn = `
-    PRODUCT PHOTOGRAPHY, 8K RESOLUTION. 
-    ${MANDATORY_STRINGS.FIDELITY_RULES}
-    ${customizationBlock}
+    PHOTOGRAPHIC STUDIO RENDER, 8K, HIGH FIDELITY.
     
-    OBJECTIVE: ${isCatalog ? MANDATORY_STRINGS.CATALOG : MANDATORY_STRINGS.SOCIAL}
+    ${promptEnTranslated}
     
-    TECHNICAL SPECS:
+    [TECHNICAL SETUP]:
+    - Mode: ${isCatalog ? MANDATORY_STRINGS.CATALOG : MANDATORY_STRINGS.SOCIAL}
     - Angle: ${settings.angle}
     - Shadow: ${settings.shadow}
-    - Lighting: Professional Studio Light.
-    - Background: ${isCatalog ? (settings.catalogBackground || "Pure solid white studio background, no scenery") : (settings.background || "Realistic environment")}.
-    
-    CONTENT:
-    - Main Subject: ${promptEnTranslated}
-    - Material Details: Must preserve original textures and engravings.
-    - Props: ${settings.props?.length > 0 ? `Include ${settings.props.join(", ")} logically placed on or near the product.` : "NO PROPS."}
-    
-    ${(settings.customPersonalization || settings.marketingDirection === 'Texto integrado') ? "" : MANDATORY_STRINGS.NO_TEXT_ENFORCEMENT}
+    - Background: ${isCatalog ? (settings.catalogBackground || "Pure white studio") : "Realistic context"}
+    - Quality: Razor sharp, realistic textures, macro detail.
+
+    ${customizationOverride}
+    ${MANDATORY_STRINGS.FIDELITY_RULES}
+    ${(settings.customPersonalization) ? "" : MANDATORY_STRINGS.NO_TEXT_ENFORCEMENT}
   `.replace(/\s+/g, " ").trim();
 
   return {
@@ -200,7 +191,7 @@ export const generateImageFromPrompt = async (
       });
 
       const imagePart = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
-      if (!imagePart?.inlineData) throw new Error("Image generation failed.");
+      if (!imagePart?.inlineData) throw new Error("Geração falhou.");
       
       return `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
   });
@@ -209,7 +200,7 @@ export const generateImageFromPrompt = async (
 export const generateStructuredBrief = async (formData: FormData): Promise<any> => {
   return executeWithRetry(async () => {
     const ai = getAiClient();
-    const prompt = `Gere brief_pt e copy_pt (title, subtitle, offer) para ${formData.productName}. MODO: ${formData.objective}. JSON.`;
+    const prompt = `Gere brief_pt e copy_pt (title, subtitle, offer) para ${formData.productName}. JSON format.`;
     
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
